@@ -1,0 +1,10 @@
+mois,jour,compteur_debut,compteur_fin,heures_travaillees,site_client,equipement,cout_revient_fcfa,revenu_fcfa,marge_brute_fcfa,taux_marge_pct,categorie_journee,cout_carburant_fcfa,marge_nette_fcfa,taux_marge_nette_pct,rentabilite,revenu_potentiel_fcfa,manque_a_gagner_fcfa,roi_pct,semaine
+Février,14,1953.8,1959.4,5.6,Site A,Groupe électrogène,35000.0,210000.0,175000.0,83.3,Normale (4-8h),31500.0,143500.0,68.3,✅ Très rentable,375000,165000.0,2296.0,Sem 2
+Février,15,1959.2,1967.1,7.9,Site B,Groupe électrogène,49375.0,296250.0,246875.0,83.3,Normale (4-8h),44438.0,202437.0,68.3,✅ Très rentable,375000,78750.0,3239.0,Sem 3
+Février,16,1967.2,1975.0,7.8,Site C,Groupe électrogène,48750.0,292500.0,243750.0,83.3,Normale (4-8h),43875.0,199875.0,68.3,✅ Très rentable,375000,82500.0,3198.0,Sem 3
+Février,17,1975.6,1983.7,8.1,Site D,Groupe électrogène,50625.0,303750.0,253125.0,83.3,Longue (> 8h),45562.0,207563.0,68.3,✅ Très rentable,375000,71250.0,3321.0,Sem 3
+Février,18,1370.6,1374.5,3.9,Site E,Groupe électrogène,24375.0,146250.0,121875.0,83.3,Courte (< 4h),21938.0,99937.0,68.3,✅ Très rentable,375000,228750.0,1599.0,Sem 3
+Février,19,0.0,0.0,0.7,Site F,Groupe électrogène,4375.0,26250.0,21875.0,83.3,Courte (< 4h),3938.0,17937.0,68.3,✅ Très rentable,375000,348750.0,287.0,Sem 3
+Février,20,9004.1,9012.2,8.1,Site G,Groupe électrogène,50625.0,303750.0,253125.0,83.3,Longue (> 8h),45562.0,207563.0,68.3,✅ Très rentable,375000,71250.0,3321.0,Sem 3
+Février,21,2014.2,2023.5,9.3,Site H,Groupe électrogène,58125.0,348750.0,290625.0,83.3,Longue (> 8h),52312.0,238313.0,68.3,✅ Très rentable,375000,26250.0,3813.0,Sem 3
+Février,22,8014.8,8644.3,9.6,Site I,Groupe électrogène,60000.0,360000.0,300000.0,83.3,Longue (> 8h),54000.0,246000.0,68.3,✅ Très rentable,375000,15000.0,3936.0,Sem 4
