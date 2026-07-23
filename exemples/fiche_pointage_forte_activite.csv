@@ -1,0 +1,5 @@
+mois,jour,compteur_debut,compteur_fin,heures_travaillees,site_client,equipement,revenu_fcfa
+Juillet,1,4100.0,4110.0,10.0,Site A,Groupe electrogene,375000
+Juillet,2,4110.0,4120.5,10.5,Site B,Groupe electrogene,393750
+Juillet,3,4120.5,4132.0,11.5,Site C,Groupe electrogene,431250
+Juillet,4,4132.0,4142.0,10.0,Site A,Groupe electrogene,375000
