@@ -12,8 +12,9 @@ Dans la barre latérale, le bouton **Charger une fiche de pointage** accepte les
 fichiers `.csv`, `.xlsx` et `.xls`. Une fiche brute doit contenir au minimum les
 colonnes `jour`, `heures_travaillees` et `revenu_fcfa`. Le dashboard calcule
 alors automatiquement les coûts, la marge, le ROI, le score et la
-classification. Les fiches déjà enrichies restent également acceptées. Sans
-fichier chargé, le dashboard utilise `classification_ml_contrats.csv`.
+classification. Les fiches déjà enrichies restent également acceptées. Aucun
+calcul n'est lancé avant le chargement d'un fichier. Le bouton **Réinitialiser
+les données** permet de vider la fiche active et de recommencer une analyse.
 
 Les données actives peuvent être téléchargées depuis le dashboard en formats
 CSV, Excel `.xlsx` ou PDF. Le fichier chargé doit contenir les colonnes

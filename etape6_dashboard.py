@@ -187,11 +187,6 @@ def preparer_donnees(df):
     return df
 
 
-@st.cache_data
-def charger_donnees_par_defaut():
-    return preparer_donnees(pd.read_csv("classification_ml_contrats.csv"))
-
-
 def exporter_excel(df):
     sortie = BytesIO()
     with pd.ExcelWriter(sortie, engine="openpyxl") as writer:
@@ -232,23 +227,34 @@ def exporter_pdf(df):
     return sortie.getvalue()
 
 
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
 with st.sidebar:
+    if st.button("↺ Réinitialiser les données", use_container_width=True):
+        st.session_state.uploader_key += 1
+        st.rerun()
     fichier = st.file_uploader(
         "Charger une fiche de pointage",
         type=["csv", "xlsx", "xls"],
+        key=f"pointage_{st.session_state.uploader_key}",
         help="Chargez une fiche CSV ou Excel avec au minimum le jour, les heures travaillées et le revenu."
     )
 
 if fichier is None:
-    df = charger_donnees_par_defaut()
-    nom_fichier = "classification_ml_contrats.csv"
-else:
-    try:
-        df = preparer_donnees(lire_fichier(fichier))
-        nom_fichier = fichier.name
-    except (ValueError, ImportError, pd.errors.ParserError) as erreur:
-        st.error(f"Impossible de charger ce fichier : {erreur}")
-        st.stop()
+    st.title("⚡ ESVE — Tableau de Bord de Rentabilité")
+    st.info(
+        "Chargez une fiche de pointage CSV ou Excel dans la barre latérale "
+        "pour lancer l'analyse. Aucun calcul n'est effectué avant le chargement."
+    )
+    st.stop()
+
+try:
+    df = preparer_donnees(lire_fichier(fichier))
+    nom_fichier = fichier.name
+except (ValueError, ImportError, pd.errors.ParserError) as erreur:
+    st.error(f"Impossible de charger ce fichier : {erreur}")
+    st.stop()
 
 # ------------------------------------------------------------
 # SIDEBAR
@@ -267,6 +273,12 @@ with st.sidebar:
     st.metric("Coût horaire machine", f"{COUT_HORAIRE:,.0f} FCFA/h".replace(",", " "))
     st.metric("Tarif client", f"{TARIF_CLIENT_HEURE:,.0f} FCFA/h".replace(",", " "))
     st.metric("Seuil rentabilité", f"{SEUIL_H:.1f}h/jour")
+    st.markdown("### 📐 Mode de calcul du ROI")
+    mode_roi = st.radio(
+        "Base du ROI",
+        options=["Coût machine", "Coûts totaux"],
+        help="Choisissez si le ROI inclut uniquement le coût machine ou aussi le carburant."
+    )
     st.markdown("---")
     st.caption("Projet Licence Data — ESVE Burkina Faso")
 
@@ -352,6 +364,12 @@ with tab1:
     heures_totales = df["heures_travaillees"].sum()
     taux_marge_moy = df["taux_marge_nette_pct"].mean()
     manque_total   = df["manque_a_gagner_fcfa"].sum()
+    cout_machine_total = df["cout_revient_fcfa"].sum()
+    cout_total = df["cout_total_journee"].sum()
+    roi_machine = marge_totale / cout_machine_total * 100 if cout_machine_total else 0
+    roi_total = marge_totale / cout_total * 100 if cout_total else 0
+    roi_affiche = roi_machine if mode_roi == "Coût machine" else roi_total
+    base_roi = "coût machine" if mode_roi == "Coût machine" else "coûts totaux"
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
@@ -376,9 +394,21 @@ with tab1:
         </div>""", unsafe_allow_html=True)
     with c5:
         st.markdown(f"""<div class="kpi red">
-            <div class="kpi-val">{roi_moyen:.0f}%</div>
-            <div class="kpi-lab">🔄 ROI Moyen</div>
+            <div class="kpi-val">{roi_affiche:.0f}%</div>
+            <div class="kpi-lab">🔄 ROI sur {base_roi}</div>
         </div>""", unsafe_allow_html=True)
+
+    roi_col1, roi_col2 = st.columns(2)
+    with roi_col1:
+        st.info(
+            f"ROI sur coût machine : **{roi_machine:.0f}%** "
+            f"(marge nette / {cout_machine_total:,.0f} FCFA)".replace(",", " ")
+        )
+    with roi_col2:
+        st.info(
+            f"ROI sur coûts totaux : **{roi_total:.0f}%** "
+            f"(marge nette / {cout_total:,.0f} FCFA)".replace(",", " ")
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -437,7 +467,7 @@ with tab1:
         legend=dict(orientation="h", yanchor="bottom", y=1.02)
     )
     st.plotly_chart(fig3, use_container_width=True)
-    st.caption(f"💡 Manque à gagner total : **{int(manque_total):,} FCFA**/mois si la machine tournait 10h/jour".replace(",", " "))
+    st.caption(f"💡 Manque à gagner total : **{int(manque_total):,} FCFA** sur la période analysée si la machine tournait 10h/jour".replace(",", " "))
 
 # ============================================================
 # ONGLET 2 — ANALYSE JOURNALIÈRE
@@ -764,7 +794,7 @@ with tab5:
         | CA total | **{int(df['revenu_fcfa'].sum()):,} FCFA** |
         | Marge nette | **{int(df['marge_nette_fcfa'].sum()):,} FCFA** |
         | Taux de marge | **{df['taux_marge_nette_pct'].mean():.1f}%** |
-        | ROI moyen | **{df['roi_pct'].mean():.0f}%** |
+        | ROI sélectionné ({base_roi}) | **{roi_affiche:.0f}%** |
         """.replace(",", " "))
 
     with col_r2:
