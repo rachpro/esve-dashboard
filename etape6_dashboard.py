@@ -25,6 +25,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from io import BytesIO
+from pathlib import Path
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -76,15 +78,177 @@ SEUIL_H            = 1.57
 # CHARGEMENT DES DONNÉES
 # ------------------------------------------------------------
 
-@st.cache_data
-def charger_donnees():
-    df = pd.read_csv("classification_ml_contrats.csv")
+COLONNES_REQUISES = {
+    "jour", "heures_travaillees", "revenu_fcfa", "marge_nette_fcfa",
+    "roi_pct", "taux_marge_nette_pct", "manque_a_gagner_fcfa",
+    "cout_total_journee", "cout_revient_fcfa", "cout_carburant_fcfa",
+    "categorie_journee", "classification", "score_rentabilite",
+    "recommandation"
+}
+
+COLONNES_POINTAGE = {
+    "jour", "heures_travaillees", "revenu_fcfa"
+}
+
+
+def lire_fichier(uploaded_file):
+    """Lit un CSV ou un classeur Excel depuis Streamlit."""
+    suffixe = Path(uploaded_file.name).suffix.lower()
+    if suffixe == ".csv":
+        contenu = uploaded_file.getvalue()
+        for encodage in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                return pd.read_csv(BytesIO(contenu), sep=None, engine="python", encoding=encodage)
+            except UnicodeDecodeError:
+                continue
+        raise ValueError("L'encodage du fichier CSV n'a pas pu être détecté.")
+    if suffixe in (".xlsx", ".xls"):
+        return pd.read_excel(BytesIO(uploaded_file.getvalue()))
+    raise ValueError("Format non pris en charge. Utilisez CSV, XLSX ou XLS.")
+
+
+def enrichir_fiche_pointage(df):
+    """Calcule les indicateurs manquants d'une fiche de pointage brute."""
+    if not COLONNES_POINTAGE.issubset(df.columns):
+        return df
+
+    df = df.copy()
+    heures = pd.to_numeric(df["heures_travaillees"], errors="coerce")
+    revenu = pd.to_numeric(df["revenu_fcfa"], errors="coerce")
+    df["cout_revient_fcfa"] = df.get(
+        "cout_revient_fcfa", heures * COUT_HORAIRE
+    )
+    df["cout_carburant_fcfa"] = df.get(
+        "cout_carburant_fcfa", revenu * TAUX_CARBURANT
+    )
+    df["cout_total_journee"] = df.get(
+        "cout_total_journee",
+        df["cout_revient_fcfa"] + df["cout_carburant_fcfa"]
+    )
+    df["marge_nette_fcfa"] = df.get(
+        "marge_nette_fcfa",
+        revenu - df["cout_total_journee"]
+    )
+    df["taux_marge_nette_pct"] = df.get(
+        "taux_marge_nette_pct",
+        (df["marge_nette_fcfa"] / revenu.replace(0, np.nan) * 100).fillna(0)
+    )
+    df["manque_a_gagner_fcfa"] = df.get(
+        "manque_a_gagner_fcfa",
+        (8 * TARIF_CLIENT_HEURE - revenu).clip(lower=0)
+    )
+    df["roi_pct"] = df.get(
+        "roi_pct",
+        (df["marge_nette_fcfa"] / df["cout_total_journee"].replace(0, np.nan) * 100).fillna(0)
+    )
+    df["categorie_journee"] = df.get(
+        "categorie_journee",
+        np.select(
+            [heures < 4, heures > 8],
+            ["Courte (< 4h)", "Longue (> 8h)"],
+            default="Normale (4-8h)"
+        )
+    )
+    df["score_rentabilite"] = df.get(
+        "score_rentabilite",
+        (heures.clip(lower=0, upper=8) / 8 * 50 +
+         df["taux_marge_nette_pct"].clip(lower=0, upper=100) * 0.2).clip(0, 100).round(1)
+    )
+    df["classification"] = df.get(
+        "classification",
+        pd.cut(
+            df["score_rentabilite"],
+            bins=[-np.inf, 50, 60, 80, np.inf],
+            labels=["🔴 Faible", "🟠 Moyen", "🟡 Bon", "🟢 Excellent"]
+        ).astype(str)
+    )
+    df["recommandation"] = df.get(
+        "recommandation",
+        np.select(
+            [heures < SEUIL_H, heures < 8],
+            ["⚠️ Sous le seuil — augmenter les heures", "📈 Peut mieux faire — viser 8h minimum"],
+            default="✅ Bonne journée — maintenir le rythme"
+        )
+    )
+    return df
+
+
+def preparer_donnees(df):
+    """Prépare une fiche brute ou déjà enrichie pour le dashboard."""
+    df = enrichir_fiche_pointage(df)
+    colonnes_manquantes = sorted(COLONNES_REQUISES - set(df.columns))
+    if colonnes_manquantes:
+        raise ValueError(
+            "Colonnes manquantes : " + ", ".join(colonnes_manquantes)
+        )
+    df = df.copy()
     df["jour_label"] = "Jour " + df["jour"].astype(str)
-    # Nettoyage de la colonne classification (supprime les emojis pour les comparaisons)
     df["classe_clean"] = df["classification"].str.extract(r"(Excellent|Bon|Moyen|Faible)")
     return df
 
-df = charger_donnees()
+
+@st.cache_data
+def charger_donnees_par_defaut():
+    return preparer_donnees(pd.read_csv("classification_ml_contrats.csv"))
+
+
+def exporter_excel(df):
+    sortie = BytesIO()
+    with pd.ExcelWriter(sortie, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Donnees")
+    return sortie.getvalue()
+
+
+def exporter_pdf(df):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    sortie = BytesIO()
+    document = SimpleDocTemplate(
+        sortie, pagesize=landscape(A4), rightMargin=10 * mm,
+        leftMargin=10 * mm, topMargin=10 * mm, bottomMargin=10 * mm
+    )
+    styles = getSampleStyleSheet()
+    elements = [
+        Paragraph("ESVE - Donnees d'analyse", styles["Title"]),
+        Spacer(1, 6 * mm)
+    ]
+    export_df = df.copy().astype(str)
+    data = [list(export_df.columns)] + export_df.values.tolist()
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        ("FONTSIZE", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f4f7")]),
+    ]))
+    elements.append(table)
+    document.build(elements)
+    return sortie.getvalue()
+
+
+with st.sidebar:
+    fichier = st.file_uploader(
+        "Charger une fiche de pointage",
+        type=["csv", "xlsx", "xls"],
+        help="Chargez une fiche CSV ou Excel avec au minimum le jour, les heures travaillées et le revenu."
+    )
+
+if fichier is None:
+    df = charger_donnees_par_defaut()
+    nom_fichier = "classification_ml_contrats.csv"
+else:
+    try:
+        df = preparer_donnees(lire_fichier(fichier))
+        nom_fichier = fichier.name
+    except (ValueError, ImportError, pd.errors.ParserError) as erreur:
+        st.error(f"Impossible de charger ce fichier : {erreur}")
+        st.stop()
 
 # ------------------------------------------------------------
 # SIDEBAR
@@ -112,6 +276,55 @@ with st.sidebar:
 
 st.title("⚡ ESVE — Tableau de Bord de Rentabilité")
 st.caption("Système d'analyse intelligente des contrats de location · Licence Data · Février 2026")
+st.markdown("---")
+
+# ------------------------------------------------------------
+# EXPORT DES DONNÉES ACTIVES
+# ------------------------------------------------------------
+
+st.subheader("📥 Télécharger les données")
+st.caption(f"Fichier actif : **{nom_fichier}** · {len(df)} lignes")
+export_col1, export_col2, export_col3 = st.columns(3)
+nom_base = Path(nom_fichier).stem
+try:
+    donnees_excel = exporter_excel(df)
+except ImportError:
+    donnees_excel = None
+try:
+    donnees_pdf = exporter_pdf(df)
+except ImportError:
+    donnees_pdf = None
+
+if donnees_excel is None or donnees_pdf is None:
+    st.info("Installez les dépendances de `requirements.txt` pour activer les exports Excel et PDF.")
+
+with export_col1:
+    st.download_button(
+        "⬇️ Télécharger en CSV",
+        data=df.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{nom_base}_export.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+with export_col2:
+    st.download_button(
+        "⬇️ Télécharger en Excel",
+        data=donnees_excel or b"",
+        file_name=f"{nom_base}_export.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        disabled=donnees_excel is None,
+        use_container_width=True
+    )
+with export_col3:
+    st.download_button(
+        "⬇️ Télécharger en PDF",
+        data=donnees_pdf or b"",
+        file_name=f"{nom_base}_export.pdf",
+        mime="application/pdf",
+        disabled=donnees_pdf is None,
+        use_container_width=True
+    )
+
 st.markdown("---")
 
 # ------------------------------------------------------------
